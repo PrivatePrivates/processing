@@ -1,4 +1,5 @@
 import random
+from google.protobuf.message import Error
 import tensorflow_hub as hub
 import tensorflow as tf
 from flask import Flask, request
@@ -66,41 +67,36 @@ def match_images(image1, image2, result1, result2):
         for i in range(num_features_2)
         if indices[i] != num_features_1
     ])
-
     # Perform geometric verification using RANSAC.
-    _, inliers = ransac(
-        (locations_1_to_use, locations_2_to_use),
-        AffineTransform,
-        min_samples=3,
-        residual_threshold=20,
-        max_trials=1000)
+    try:
+        _, inliers = ransac(
+            (locations_1_to_use, locations_2_to_use),
+            AffineTransform,
+            min_samples=3,
+            residual_threshold=20,
+            max_trials=1000)
 
+        if inliers is None:
+            raise Error
+    except:
+        print('Found no inliers')
+        return 0
     print('Found %d inliers' % sum(inliers))
+    return int(sum(inliers))
 
-    # Visualize correspondences.
-    fig, ax = plt.subplots()
-    inlier_idxs = np.nonzero(inliers)[0]
-    plot_matches(
-        ax,
-        image1,
-        image2,
-        locations_1_to_use,
-        locations_2_to_use,
-        np.column_stack((inlier_idxs, inlier_idxs)),
-        matches_color='b')
-    ax.axis('off')
-    ax.set_title('Connections between images')
 
 
 @app.route("/", methods=["POST"])
 def compare_images():
+    print(request.json)
     image1 = load_and_resize(request.json["image1"])
     image2 = load_and_resize(request.json["image2"])
 
     result1 = run_delf(image1)
     result2 = run_delf(image2)
 
-    match_images(image1, image2, result1, result2)
-    filename = f"res-{random.randrange(1, 100)}.jpg"
-    plt.savefig(f"{resultFolder}/{filename}")
-    return f"{filename}!\n"
+    common = match_images(image1, image2, result1, result2)
+    results = {
+        "common_features": common,
+    }
+    return results
